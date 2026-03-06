@@ -1,0 +1,10 @@
+{
+  "name": "kyc-api-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "API Gateway + microsserviços BetterWith KYC",
+  "scripts": {
+    "dev": "echo 'Adicione scripts por serviço'",
+    "test": "echo 'Adicione testes'"
+  }
+}
