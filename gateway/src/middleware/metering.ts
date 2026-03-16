@@ -3,11 +3,12 @@ import { db } from "../db.js";
 import { usage } from "../schema.js";
 import { eq, and } from "drizzle-orm";
 
-const now = new Date();
-const month = now.getMonth() + 1;
-const year = now.getFullYear();
+function currentMonth() { return new Date().getMonth() + 1; }
+function currentYear() { return new Date().getFullYear(); }
 
 export async function recordUsage(clientId: string, service: string) {
+  const month = currentMonth();
+  const year = currentYear();
   const rows = await db
     .select()
     .from(usage)
@@ -34,6 +35,8 @@ export async function recordUsage(clientId: string, service: string) {
 export async function checkQuota(req: Request, res: Response, next: NextFunction) {
   if (!req.client) return next();
   if (req.client.planId === "paid") return next();
+  const month = currentMonth();
+  const year = currentYear();
   const rows = await db
     .select({ count: usage.count })
     .from(usage)

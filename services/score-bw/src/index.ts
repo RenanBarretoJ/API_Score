@@ -14,12 +14,26 @@ if (!SCORE_BW_BASE_URL || !SCORE_BW_API_KEY) {
   process.exit(1);
 }
 
+app.set("trust proxy", 1);
+
+// /health ANTES de qualquer middleware
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok", service: "score-bw", timestamp: new Date().toISOString() });
+});
+
+app.get("/", (_req, res) => {
+  res.json({ status: "ok", service: "score-bw" });
+});
+
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.json({ limit: "1mb" }));
 
 const limiter = rateLimit({
   windowMs: 60 * 1000,
   max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (req.ip ?? req.socket?.remoteAddress ?? "unknown"),
   message: { success: false, message: "Limite de requisições atingido. Tente em 1 minuto." },
 });
 app.use(limiter);
@@ -61,10 +75,6 @@ async function proxyPost(path: string, body: object, res: Response) {
     });
   }
 }
-
-app.get("/health", (_req, res) => {
-  res.json({ status: "ok", service: "score-bw", timestamp: new Date().toISOString() });
-});
 
 app.post("/score", requireApiKey, async (req, res) => {
   const cpf = req.body?.cpf;
