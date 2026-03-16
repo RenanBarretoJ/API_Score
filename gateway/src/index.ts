@@ -69,11 +69,17 @@ app.use((_req, res) => {
 });
 // ────────────────────────────────────────────────────────────────────────────
 
-app.listen(PORT, "0.0.0.0", () => {
+const server = app.listen(PORT, "0.0.0.0", () => {
   console.log(`[gateway] listening on port ${PORT}`);
   console.log(`[gateway] DATABASE_URL: ${process.env.DATABASE_URL ? "ok" : "NÃO DEFINIDA"}`);
   console.log(`[gateway] SCORE_BW_SERVICE_URL: ${process.env.SCORE_BW_SERVICE_URL ?? "não definida"}`);
 });
+
+// Node.js fecha keep-alive após 5s por padrão.
+// Render's load balancer mantém conexões por 60s.
+// Sem isso, Render tenta reusar conexões já fechadas e retorna "Not Found".
+server.keepAliveTimeout = 65000;
+server.headersTimeout = 66000;
 
 process.on("uncaughtException", (err) => {
   console.error("[gateway] Erro não capturado:", err.message, err.stack);
