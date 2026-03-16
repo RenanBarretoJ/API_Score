@@ -103,6 +103,17 @@ Se tudo estiver certo: Gateway valida a key, verifica cota, chama o Score BW na 
 
 O seed cria um plano **free** com cota 100. Após 100 chamadas no mês, o Gateway responde **429** com mensagem de cota atingida. O uso fica em `usage` (por cliente, mês e serviço).
 
+### 6. Disponibilizar para um cliente testar
+
+1. **Definir `ADMIN_SECRET`** no `.env` do Gateway (ex: uma senha forte). Assim você pode usar as rotas admin.
+2. **Criar um cliente para o teste:**  
+   `curl -X POST http://localhost:4000/admin/clients -H "Content-Type: application/json" -H "X-Admin-Key: SEU_ADMIN_SECRET" -d '{"name":"Cliente Demo","email":"demo@empresa.com","planId":"free"}'`  
+   A resposta traz uma **API Key** — envie só essa key e a URL do Gateway (e opcionalmente o link para `/dev`) ao cliente.
+3. **Cliente pode:**  
+   - Abrir **GET /dev** no navegador, colar a API Key e clicar em “Ver meus dados e uso” para ver o contador e a cota.  
+   - Testar chamadas (ex: Score) na própria página ou via Postman/curl com `X-API-Key: <key>`.
+4. **Você pode:** listar clientes e ver uso com `GET /admin/clients` e `GET /admin/clients/:id/usage` (sempre com header `X-Admin-Key`).
+
 ## Resumo de variáveis
 
 | Onde | Variável | Descrição |
@@ -110,6 +121,7 @@ O seed cria um plano **free** com cota 100. Após 100 chamadas no mês, o Gatewa
 | Gateway | `DATABASE_URL` | Postgres do Gateway |
 | Gateway | `SCORE_BW_SERVICE_URL` | URL do serviço Score BW (ex: http://localhost:4001) |
 | Gateway | `GATEWAY_SERVICE_KEY` | Chave que o Gateway envia ao Score BW |
+| Gateway | `ADMIN_SECRET` | Chave para rotas admin (X-Admin-Key); criar clientes e ver uso |
 | Score BW (serviço) | `SCORE_BW_BASE_URL` | Backend Score BW real |
 | Score BW (serviço) | `SCORE_BW_API_KEY` | Key do backend real |
 | Score BW (serviço) | `PLATFORM_API_KEY` | = `GATEWAY_SERVICE_KEY` (quem pode chamar o serviço) |

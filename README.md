@@ -7,6 +7,7 @@ Repositório dedicado ao **API Gateway** e **microsserviços** da plataforma Bet
 
 ## Documentação
 
+- **[docs/INFRA-RENDER-SUPABASE.md](docs/INFRA-RENDER-SUPABASE.md)** — Infraestrutura com **Render** (hosting) + **Supabase** (PostgreSQL).
 - **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — Stack (Node vs FastAPI), banco (MySQL/Postgres), hosting (Render etc.), pagamentos (free + Stripe).
 - **[docs/database-schema.md](docs/database-schema.md)** — Schema sugerido para Gateway + Billing (clientes, API keys, planos, uso).
 
