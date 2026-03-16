@@ -1,12 +1,15 @@
 import { Router, Request, Response } from "express";
 import { db } from "../db.js";
-import { clients, plans, usage } from "../schema.js";
-import { eq, and } from "drizzle-orm";
+import { clients, plans, usage, queryLogs } from "../schema.js";
+import { eq, and, desc } from "drizzle-orm";
 
 const router = Router();
-const now = new Date();
-const month = now.getMonth() + 1;
-const year = now.getFullYear();
+function currentMonth() {
+  return new Date().getMonth() + 1;
+}
+function currentYear() {
+  return new Date().getFullYear();
+}
 
 /** Dados do cliente autenticado (plano, cota, uso do mês). */
 router.get("/", async (req: Request, res: Response) => {
@@ -27,6 +30,8 @@ router.get("/", async (req: Request, res: Response) => {
   if (!row) {
     return res.status(404).json({ success: false, message: "Cliente não encontrado." });
   }
+  const month = currentMonth();
+  const year = currentYear();
   const [usageRow] = await db
     .select({ count: usage.count, byService: usage.byService })
     .from(usage)
@@ -52,6 +57,8 @@ router.get("/usage", async (req: Request, res: Response) => {
   if (!req.client) {
     return res.status(401).json({ success: false, message: "Não autenticado." });
   }
+  const month = currentMonth();
+  const year = currentYear();
   const [row] = await db
     .select({ count: usage.count, byService: usage.byService })
     .from(usage)
@@ -59,6 +66,22 @@ router.get("/usage", async (req: Request, res: Response) => {
   const count = row?.count ?? 0;
   const byService = (row?.byService as Record<string, number>) ?? {};
   res.json({ month, year, count, byService });
+});
+
+/** Últimos logs de consulta do cliente autenticado. Query: ?limit=50 */
+router.get("/logs", async (req: Request, res: Response) => {
+  if (!req.client) {
+    return res.status(401).json({ success: false, message: "Não autenticado." });
+  }
+  const limitQ = parseInt((req.query.limit as string) || "50", 10);
+  const limit = Number.isNaN(limitQ) ? 50 : Math.max(1, Math.min(limitQ, 200));
+  const rows = await db
+    .select()
+    .from(queryLogs)
+    .where(eq(queryLogs.clientId, req.client.clientId))
+    .orderBy(desc(queryLogs.createdAt))
+    .limit(limit);
+  res.json({ logs: rows });
 });
 
 export default router;

@@ -1,6 +1,6 @@
 import { Router, Request, Response } from "express";
 import { db } from "../db.js";
-import { clients, apiKeys, plans, usage } from "../schema.js";
+import { clients, apiKeys, plans, usage, queryLogs } from "../schema.js";
 import { eq, and, desc } from "drizzle-orm";
 import { generateApiKey } from "../lib/api-key.js";
 
@@ -133,6 +133,30 @@ router.get("/clients/:id/usage", async (req: Request, res: Response) => {
     clientId: id,
     clientName: client.name,
     usage: rows.map((r) => ({ month: r.month, year: r.year, count: r.count, byService: r.byService })),
+  });
+});
+
+/** Logs de consultas por cliente. Query: ?limit=100 */
+router.get("/clients/:id/logs", async (req: Request, res: Response) => {
+  const rawId = req.params.id;
+  const id = typeof rawId === "string" ? rawId : rawId?.[0];
+  if (!id) return res.status(400).json({ success: false, message: "ID inválido." });
+  const [client] = await db.select().from(clients).where(eq(clients.id, id));
+  if (!client) {
+    return res.status(404).json({ success: false, message: "Cliente não encontrado." });
+  }
+  const limitQ = parseInt((req.query.limit as string) || "100", 10);
+  const limit = Number.isNaN(limitQ) ? 100 : Math.max(1, Math.min(limitQ, 500));
+  const rows = await db
+    .select()
+    .from(queryLogs)
+    .where(eq(queryLogs.clientId, id))
+    .orderBy(desc(queryLogs.createdAt))
+    .limit(limit);
+  res.json({
+    clientId: id,
+    clientName: client.name,
+    logs: rows,
   });
 });
 

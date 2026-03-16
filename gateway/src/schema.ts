@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, text, integer, jsonb, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, uuid, varchar, integer, jsonb, timestamp, uniqueIndex, index } from "drizzle-orm/pg-core";
 
 export const plans = pgTable("plans", {
   id: varchar("id", { length: 32 }).primaryKey(),
@@ -44,4 +44,26 @@ export const usage = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (t) => [uniqueIndex("usage_client_month_year").on(t.clientId, t.month, t.year)]
+);
+
+export const queryLogs = pgTable(
+  "query_logs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    clientId: uuid("client_id").notNull().references(() => clients.id),
+    service: varchar("service", { length: 64 }).notNull(),
+    endpoint: varchar("endpoint", { length: 128 }).notNull(),
+    documentType: varchar("document_type", { length: 8 }),
+    documentValue: varchar("document_value", { length: 32 }),
+    requestBody: jsonb("request_body").$type<Record<string, unknown>>().default({}),
+    responseStatus: integer("response_status").notNull(),
+    responseBody: jsonb("response_body").$type<Record<string, unknown> | string | null>(),
+    errorMessage: varchar("error_message", { length: 512 }),
+    durationMs: integer("duration_ms").notNull().default(0),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("query_logs_client_created_idx").on(t.clientId, t.createdAt),
+    index("query_logs_service_created_idx").on(t.service, t.createdAt),
+  ]
 );
