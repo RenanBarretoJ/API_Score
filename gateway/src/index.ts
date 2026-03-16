@@ -15,6 +15,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = parseInt(process.env.PORT || "4000", 10);
 
+// Necessário para que req.ip funcione corretamente atrás do proxy reverso do Render
+app.set("trust proxy", 1);
+
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.json({ limit: "1mb" }));
 
@@ -22,9 +25,17 @@ app.use(
   rateLimit({
     windowMs: 60 * 1000,
     max: 120,
+    standardHeaders: true,
+    legacyHeaders: false,
     message: { success: false, message: "Muitas requisições. Tente em 1 minuto." },
   })
 );
+
+// Log de todas as requisições (diagnóstico)
+app.use((req, _res, next) => {
+  console.log(`[gateway] ${req.method} ${req.path}`);
+  next();
+});
 
 app.get("/health", (_req, res) => {
   res.json({ status: "ok", service: "gateway", timestamp: new Date().toISOString() });
