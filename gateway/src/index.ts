@@ -44,4 +44,16 @@ app.use((_req, res) => {
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`[gateway] listening on port ${PORT}`);
+  console.log(`[gateway] DATABASE_URL configurada: ${process.env.DATABASE_URL ? "SIM" : "NÃO"}`);
+  console.log(`[gateway] SCORE_BW_SERVICE_URL: ${process.env.SCORE_BW_SERVICE_URL ?? "não definida"}`);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("[gateway] Erro não capturado:", err.message, err.stack);
+  process.exit(1);
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("[gateway] Promise rejeitada não tratada:", reason);
+  process.exit(1);
 });
