@@ -24,7 +24,7 @@ if (DATABASE_URL) {
     connectionString: DATABASE_URL,
     ssl: DATABASE_URL.includes("supabase.com") ? { rejectUnauthorized: false } : false,
   });
-  pool.on("error", (err) => console.error("[DB] Pool error:", err.message));
+  pool.on("error", (err: Error) => console.error("[DB] Pool error:", err.message));
   console.log("[score-bw] DATABASE_URL configurado — logs ativos");
 } else {
   console.warn("[score-bw] DATABASE_URL não configurado — logs desativados");
