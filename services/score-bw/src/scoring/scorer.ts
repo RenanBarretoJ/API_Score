@@ -47,6 +47,9 @@ export interface ScoreResult {
     total_empregos?: number | null;
     empregos_ativos?: number | null;
     empregado?: boolean | null;
+    // Apostas online
+    aposta_propensity?: string | null;
+    aposta_365d?: number | null;
     // Campos legados
     renda_estimada?: number | null;
     score_bdc?: number | null;
@@ -160,14 +163,11 @@ export function calcularScorePF(input: ScorePFInput): ScoreResult {
     : null;
 
   // Apostas online
-  const apostas30d = safeNum(
-    f["OnlineBettingPropensity.Last30DaysPassages"] ??
-    resultItem?.OnlineBettingPropensity?.Last30DaysPassages ?? 0
-  );
-  const apostas90d = safeNum(
-    f["OnlineBettingPropensity.Last90DaysPassages"] ??
-    resultItem?.OnlineBettingPropensity?.Last90DaysPassages ?? 0
-  );
+  const bettingData = resultItem?.OnlineBettingPropensity ?? {};
+  const apostas30d = safeNum(bettingData?.Last30DaysPassages ?? f["OnlineBettingPropensity.Last30DaysPassages"] ?? 0);
+  const apostas90d = safeNum(bettingData?.Last90DaysPassages ?? f["OnlineBettingPropensity.Last90DaysPassages"] ?? 0);
+  const apostas365d = safeNum(bettingData?.Last365DaysPassages ?? f["OnlineBettingPropensity.Last365DaysPassages"] ?? 0);
+  const apostaPropensity: string = bettingData?.PropensityScore ?? f["OnlineBettingPropensity.PropensityScore"] ?? "";
 
   // --- Cálculo do score ---
 
@@ -224,6 +224,8 @@ export function calcularScorePF(input: ScorePFInput): ScoreResult {
       total_empregos: totalEmpregos,
       empregos_ativos: empregosAtivos,
       empregado: isEmpregado,
+      aposta_propensity: apostaPropensity || null,
+      aposta_365d: apostas365d,
       renda_estimada: rendaEstimada > 0 ? rendaEstimada : null,
       score_bdc: bdcScore >= 0 ? bdcScore : null,
       total_processos: totalProcessos,
