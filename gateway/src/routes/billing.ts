@@ -86,13 +86,10 @@ router.post("/checkout", async (req: Request, res: Response) => {
       await db.update(clients).set({ stripeCustomerId }).where(eq(clients.id, clientId));
     }
 
-    // Cria o Stripe Checkout Session
-    const session = await stripe.checkout.sessions.create({
-      customer: stripeCustomerId,
-      payment_method_types: ["card"],
-      mode: "payment",
-      line_items: [
-        {
+    // Monta line_items: usa Stripe Price ID se disponível, senão price_data dinâmico
+    const lineItem = pack.stripePriceId
+      ? { price: pack.stripePriceId, quantity: 1 }
+      : {
           price_data: {
             currency: "brl",
             product_data: {
@@ -102,8 +99,14 @@ router.post("/checkout", async (req: Request, res: Response) => {
             unit_amount: pack.priceReais,
           },
           quantity: 1,
-        },
-      ],
+        };
+
+    // Cria o Stripe Checkout Session
+    const session = await stripe.checkout.sessions.create({
+      customer: stripeCustomerId,
+      payment_method_types: ["card"],
+      mode: "payment",
+      line_items: [lineItem],
       metadata: {
         clientId,
         packId,
