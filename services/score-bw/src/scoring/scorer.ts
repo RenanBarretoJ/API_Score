@@ -192,36 +192,76 @@ export function calcularScorePF(input: ScorePFInput): ScoreResult {
 export function calcularScorePJ(input: ScorePJInput): ScoreResult {
   const f = input.flattened;
   const raw = input.raw;
+  const resultItem = raw?.Result?.[0] ?? {};
 
-  const nome = f["BasicData.OfficialName"] ?? f["BasicData.TradeName"] ?? f["BasicData.Name"] ?? "";
+  // Nome da empresa — BDC usa OfficialName ou TaxIdName para PJ
+  const nome =
+    f["BasicData.OfficialName"] ??
+    f["BasicData.TaxIdName"] ??
+    f["BasicData.TradeName"] ??
+    resultItem?.BasicData?.OfficialName ??
+    resultItem?.BasicData?.TaxIdName ??
+    resultItem?.BasicData?.TradeName ?? "";
 
+  // Score financeiro da BDC para PJ
+  const bdcScore = safeNum(
+    f["FinancialRisk.FinancialRiskScore"] ??
+    resultItem?.FinancialRisk?.FinancialRiskScore ??
+    null, -1
+  );
+
+  // Processos
   const totalProcessos = safeNum(
-    f["Processes.TotalCount"] ??
-    f["Processes.Count"] ??
-    raw?.Processes?.TotalCount ?? 0
+    f["Processes.TotalLawsuits"] ??
+    resultItem?.Processes?.TotalLawsuits ??
+    f["Processes.TotalCount"] ?? 0
+  );
+  const processosReu = safeNum(
+    f["Processes.TotalLawsuitsAsDefendant"] ??
+    resultItem?.Processes?.TotalLawsuitsAsDefendant ?? 0
   );
 
+  // KYC da empresa
   const isSancionado = safeBool(
-    f["Kyc.IsCurrentlySanctioned"] ??
     f["KycData.IsCurrentlySanctioned"] ??
-    raw?.Kyc?.IsCurrentlySanctioned
+    resultItem?.KycData?.IsCurrentlySanctioned
   );
 
-  const socios = raw?.DynamicQsaData?.PartnerData || [];
+  // Sócios com PEP — DynamicQsaData fica dentro de Result[0]
+  const socios: any[] = resultItem?.DynamicQsaData?.PartnerData ?? [];
   const sociosPEP = socios.filter((s: any) =>
     safeBool(s?.KycData?.IsCurrentlyPEP ?? s?.Kyc?.IsCurrentlyPEP)
   ).length;
 
-  let score = 700;
+  // Inadimplência PJ
+  const emCobrancaAtual = safeBool(
+    f["Collections.IsCurrentlyOnCollection"] ??
+    resultItem?.Collections?.IsCurrentlyOnCollection
+  );
+  const totalCobrancas = safeNum(
+    f["Collections.CollectionOccurrences"] ??
+    resultItem?.Collections?.CollectionOccurrences ?? 0
+  );
 
-  if (isSancionado) score -= 300;
-  if (sociosPEP > 0) score -= Math.min(sociosPEP * 80, 200);
-  if (totalProcessos > 0) score -= Math.min(totalProcessos * 15, 150);
-  if (totalProcessos === 0 && !isSancionado) score += 100;
+  // --- Cálculo do score ---
+  let score: number;
 
-  score = Math.max(0, Math.min(1000, Math.round(score)));
+  if (bdcScore >= 0 && bdcScore <= 1000) {
+    score = bdcScore;
+  } else {
+    score = 700;
 
-  const alertaGeral = isSancionado || sociosPEP > 0 || totalProcessos > 5;
+    if (isSancionado) score -= 300;
+    if (emCobrancaAtual) score -= 150;
+    if (sociosPEP > 0) score -= Math.min(sociosPEP * 80, 200);
+    if (processosReu > 0) score -= Math.min(processosReu * 15, 150);
+    if (totalCobrancas > 0) score -= Math.min(totalCobrancas * 15, 100);
+    if (totalProcessos === 0 && !isSancionado && !emCobrancaAtual) score += 100;
+
+    score = Math.max(0, Math.min(1000, Math.round(score)));
+  }
+
+  const alertaGeral = isSancionado || sociosPEP > 0 || emCobrancaAtual || processosReu > 5;
 
   return {
     score,
@@ -233,16 +273,16 @@ export function calcularScorePJ(input: ScorePJInput): ScoreResult {
       alerta_sancao: isSancionado,
       alerta_obito: false,
       alerta_processos: totalProcessos > 0,
-      alerta_inadimplencia: false,
+      alerta_inadimplencia: emCobrancaAtual,
       alerta_apostas: false,
     },
     detalhes: {
       nome,
       idade: null,
       renda_estimada: null,
-      score_bdc: null,
+      score_bdc: bdcScore >= 0 ? bdcScore : null,
       total_processos: totalProcessos,
-      total_cobrancas: 0,
+      total_cobrancas: totalCobrancas,
       pep: sociosPEP > 0,
       obito: false,
     },

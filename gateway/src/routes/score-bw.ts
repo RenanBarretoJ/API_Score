@@ -74,7 +74,7 @@ async function proxy(
         "x-api-key": SERVICE_KEY,
       },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(60000),
+      signal: AbortSignal.timeout(90000),
     });
     const text = await response.text();
     const parsedBody = parseResponseBody(text);
