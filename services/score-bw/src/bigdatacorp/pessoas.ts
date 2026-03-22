@@ -41,7 +41,7 @@ function flattenObject(obj: any, prefix = "", result: Record<string, any> = {}):
 
 export async function consultarPessoa(cpf: string, refresh = false): Promise<BDCPessoaResult> {
   const clean = cpf.replace(/\D/g, "");
-  const { token } = await getBDCToken();
+  const { token, tokenId } = await getBDCToken();
 
   console.log(`[BDC Pessoas] Consultando CPF ${clean} (datasets: ${DATASETS_PF.length})`);
 
@@ -59,7 +59,7 @@ export async function consultarPessoa(cpf: string, refresh = false): Promise<BDC
     headers: {
       "Content-Type": "application/json",
       "AccessToken": token,
-      "TokenSecret": process.env.BDC_SENHA || "",
+      "TokenId": tokenId,
     },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(30000),

@@ -39,7 +39,7 @@ function flattenObject(obj: any, prefix = "", result: Record<string, any> = {}):
 
 export async function consultarEmpresa(cnpj: string, refresh = false): Promise<BDCEmpresaResult> {
   const clean = cnpj.replace(/\D/g, "");
-  const { token } = await getBDCToken();
+  const { token, tokenId } = await getBDCToken();
 
   console.log(`[BDC Empresas] Consultando CNPJ ${clean} (datasets: ${DATASETS_PJ.length})`);
 
@@ -57,7 +57,7 @@ export async function consultarEmpresa(cnpj: string, refresh = false): Promise<B
     headers: {
       "Content-Type": "application/json",
       "AccessToken": token,
-      "TokenSecret": process.env.BDC_SENHA || "",
+      "TokenId": tokenId,
     },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(30000),
