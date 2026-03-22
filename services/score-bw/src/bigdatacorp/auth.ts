@@ -9,21 +9,35 @@ interface TokenCache {
 let cached: TokenCache | null = null;
 
 export async function getBDCToken(): Promise<{ token: string; tokenId: string }> {
-  // Se já temos token em cache e ainda não expirou, reutiliza
+  // 1) Cache em memória ainda válido
   if (cached && Date.now() < cached.expiresAt) {
     return { token: cached.token, tokenId: cached.tokenId };
   }
 
+  // 2) Token estático via variável de ambiente (gerado pelo painel BDC)
+  const staticToken = process.env.BDC_TOKEN;
+  const staticTokenId = process.env.BDC_TOKEN_ID || "";
+
+  if (staticToken) {
+    cached = {
+      token: staticToken,
+      tokenId: staticTokenId,
+      expiresAt: Date.now() + 20 * 60 * 60 * 1000,
+    };
+    console.log("[BDC Auth] Usando token estático (BDC_TOKEN)");
+    return { token: staticToken, tokenId: staticTokenId };
+  }
+
+  // 3) Geração dinâmica via login/senha
   const login = process.env.BDC_LOGIN;
   const senha = process.env.BDC_SENHA;
 
   if (!login || !senha) {
-    throw new Error("BDC_LOGIN ou BDC_SENHA não configurados");
+    throw new Error("Configure BDC_TOKEN ou (BDC_LOGIN + BDC_SENHA)");
   }
 
   console.log("[BDC Auth] Gerando novo token JWT...");
 
-  // POST /tokens/gerar — envia login como AccessToken e senha como TokenSecret
   const response = await fetch(`${BDC_BASE_URL}/tokens/gerar`, {
     method: "POST",
     headers: {
@@ -41,8 +55,6 @@ export async function getBDCToken(): Promise<{ token: string; tokenId: string }>
   }
 
   const data = await response.json() as any;
-
-  // A BDC retorna o token no campo "token" ou "Token"
   const token = data.token || data.Token || data.access_token || data.AccessToken;
   const tokenId = data.tokenId || data.TokenId || data.token_id || data.id || "";
 
@@ -50,7 +62,6 @@ export async function getBDCToken(): Promise<{ token: string; tokenId: string }>
     throw new Error(`BDC Auth: token não retornado. Resposta: ${JSON.stringify(data)}`);
   }
 
-  // Cache por 20h (token válido por 1 ano mas regeneramos frequentemente por segurança)
   cached = {
     token,
     tokenId,
