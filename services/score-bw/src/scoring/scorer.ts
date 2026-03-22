@@ -37,6 +37,17 @@ export interface ScoreResult {
   detalhes: {
     nome?: string;
     idade?: number | null;
+    // Patrimônio estimado (TotalAssets da BDC)
+    patrimonio?: string | null;
+    // Renda estimada BIGDATA_V2 (faixa em SM)
+    renda_bdc_v2?: string | null;
+    // Dados profissionais (occupation_data)
+    renda_profissional_faixa?: string | null;
+    renda_profissional_valor?: number | null;
+    total_empregos?: number | null;
+    empregos_ativos?: number | null;
+    empregado?: boolean | null;
+    // Campos legados
     renda_estimada?: number | null;
     score_bdc?: number | null;
     total_processos?: number;
@@ -115,11 +126,38 @@ export function calcularScorePF(input: ScorePFInput): ScoreResult {
     resultItem?.KycData?.IsCurrentlySanctioned
   );
 
-  // Renda (usa FinancialRisk que tem EstimatedIncomeRange)
+  // --- Dados financeiros (financial_data) ---
+  // BDC usa "FinantialData" (com typo na API deles)
+  const patrimonio: string =
+    f["FinantialData.TotalAssets"] ??
+    resultItem?.FinantialData?.TotalAssets ?? "";
+
+  const rendaBdcV2: string =
+    f["FinantialData.IncomeEstimates.BIGDATA_V2"] ??
+    resultItem?.FinantialData?.IncomeEstimates?.BIGDATA_V2 ?? "";
+
+  // Renda numérica legada (fallback)
   const rendaEstimada = safeNum(
-    f["FinancialData.EstimatedIncome"] ??
-    resultItem?.FinancialData?.EstimatedIncome ?? 0
+    resultItem?.FinantialData?.EstimatedIncome ?? 0
   );
+
+  // --- Dados profissionais (occupation_data) ---
+  const profData = resultItem?.ProfessionData ?? {};
+  const rendaProfFaixa: string = profData?.TotalIncomeRange ?? f["ProfessionData.TotalIncomeRange"] ?? "";
+  const rendaProfValor: number | null = profData?.TotalIncome != null
+    ? safeNum(profData.TotalIncome)
+    : f["ProfessionData.TotalIncome"] != null
+    ? safeNum(f["ProfessionData.TotalIncome"])
+    : null;
+  const totalEmpregos: number | null = profData?.TotalProfessions != null
+    ? safeNum(profData.TotalProfessions)
+    : null;
+  const empregosAtivos: number | null = profData?.TotalActiveProfessions != null
+    ? safeNum(profData.TotalActiveProfessions)
+    : null;
+  const isEmpregado: boolean | null = profData?.IsEmployed != null
+    ? safeBool(profData.IsEmployed)
+    : null;
 
   // Apostas online
   const apostas30d = safeNum(
@@ -179,6 +217,13 @@ export function calcularScorePF(input: ScorePFInput): ScoreResult {
     detalhes: {
       nome,
       idade: idade >= 0 ? idade : null,
+      patrimonio: patrimonio || null,
+      renda_bdc_v2: rendaBdcV2 || null,
+      renda_profissional_faixa: rendaProfFaixa || null,
+      renda_profissional_valor: rendaProfValor,
+      total_empregos: totalEmpregos,
+      empregos_ativos: empregosAtivos,
+      empregado: isEmpregado,
       renda_estimada: rendaEstimada > 0 ? rendaEstimada : null,
       score_bdc: bdcScore >= 0 ? bdcScore : null,
       total_processos: totalProcessos,

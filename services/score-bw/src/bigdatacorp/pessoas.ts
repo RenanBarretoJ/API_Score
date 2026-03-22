@@ -3,6 +3,7 @@ import { getBDCToken, BDC_BASE_URL } from "./auth.js";
 const DATASETS_PF = [
   "basic_data",
   "financial_data",
+  "occupation_data",
   "collections",
   "processes",
   "kyc",
