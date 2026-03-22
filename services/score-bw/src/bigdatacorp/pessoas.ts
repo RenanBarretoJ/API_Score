@@ -71,11 +71,12 @@ export async function consultarPessoa(cpf: string, refresh = false): Promise<BDC
   }
 
   const raw = await response.json() as any;
-  const fromCache = raw?.QueryDate ? false : false;
+  const resultItem = raw?.Result?.[0] ?? {};
 
-  console.log(`[BDC Pessoas] CPF ${clean} consultado. Status: ${raw?.Status?.[0]?.Code ?? "N/A"}`);
+  console.log(`[BDC Pessoas] CPF ${clean} consultado. QueryId: ${raw?.QueryId ?? "N/A"}`);
 
-  const flattened = flattenObject(raw);
+  // Flatten a partir do primeiro item do Result (onde estão os dados da pessoa)
+  const flattened = flattenObject(resultItem);
 
-  return { raw, flattened, fromCache };
+  return { raw, flattened, fromCache: false };
 }

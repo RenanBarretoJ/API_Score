@@ -69,10 +69,12 @@ export async function consultarEmpresa(cnpj: string, refresh = false): Promise<B
   }
 
   const raw = await response.json() as any;
+  const resultItem = raw?.Result?.[0] ?? {};
 
-  console.log(`[BDC Empresas] CNPJ ${clean} consultado. Status: ${raw?.Status?.[0]?.Code ?? "N/A"}`);
+  console.log(`[BDC Empresas] CNPJ ${clean} consultado. QueryId: ${raw?.QueryId ?? "N/A"}`);
 
-  const flattened = flattenObject(raw);
+  // Flatten a partir do primeiro item do Result
+  const flattened = flattenObject(resultItem);
 
   return { raw, flattened, fromCache: false };
 }

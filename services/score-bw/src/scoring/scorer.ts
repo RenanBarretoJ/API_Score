@@ -63,63 +63,72 @@ export function calcularScorePF(input: ScorePFInput): ScoreResult {
 
   // --- Extrair campos relevantes ---
 
-  // Score interno da BDC (flags_and_features) — se disponível, usa como base
+  // Score financeiro interno da BDC (0-1000)
   const bdcScore = safeNum(
+    f["FinancialRisk.FinancialRiskScore"] ??
     f["FlagsAndFeatures.FinancialRiskScore"] ??
-    f["FlagsAndFeatures.Score"] ??
-    f["FinancialRisk.Score"] ??
+    raw?.Result?.[0]?.FinancialRisk?.FinancialRiskScore ??
     null, -1
   );
 
-  const nome = f["BasicData.Name"] || f["BasicData.TaxIdName"] || "";
-  const idade = safeNum(f["BasicData.Age"] ?? null, -1);
-  const obito = safeBool(f["BasicData.DeathIndication"] ?? f["BasicData.IsDead"]);
+  const resultItem = raw?.Result?.[0] ?? {};
+
+  const nome = f["BasicData.Name"] || f["BasicData.TaxIdName"] ||
+    resultItem?.BasicData?.Name || resultItem?.BasicData?.TaxIdName || "";
+  const idade = safeNum(f["BasicData.Age"] ?? resultItem?.BasicData?.Age ?? null, -1);
+  const obito = safeBool(
+    f["BasicData.HasObitIndication"] ??
+    resultItem?.BasicData?.HasObitIndication ??
+    f["BasicData.DeathIndication"]
+  );
 
   // Inadimplência / Cobranças
   const totalCobrancas = safeNum(
-    f["Collections.TotalCount"] ??
-    f["Collections.Count"] ??
-    raw?.Collections?.TotalCount ?? 0
+    f["Collections.CollectionOccurrences"] ??
+    resultItem?.Collections?.CollectionOccurrences ??
+    f["Collections.TotalCount"] ?? 0
+  );
+  const emCobrancaAtual = safeBool(
+    f["Collections.IsCurrentlyOnCollection"] ??
+    resultItem?.Collections?.IsCurrentlyOnCollection
   );
 
   // Processos
   const totalProcessos = safeNum(
-    f["Processes.TotalCount"] ??
-    f["Processes.Count"] ??
-    raw?.Processes?.TotalCount ?? 0
+    f["Processes.TotalLawsuits"] ??
+    resultItem?.Processes?.TotalLawsuits ??
+    f["Processes.TotalCount"] ?? 0
   );
   const processosReu = safeNum(
-    f["Processes.TotalAsDefendant"] ??
-    f["Processes.TotalCountAsDefendant"] ?? 0
+    f["Processes.TotalLawsuitsAsDefendant"] ??
+    resultItem?.Processes?.TotalLawsuitsAsDefendant ??
+    f["Processes.TotalAsDefendant"] ?? 0
   );
 
   // KYC / PEP / Sanções
   const isPEP = safeBool(
-    f["Kyc.IsCurrentlyPEP"] ??
     f["KycData.IsCurrentlyPEP"] ??
-    raw?.Kyc?.IsCurrentlyPEP
+    resultItem?.KycData?.IsCurrentlyPEP
   );
   const isSancionado = safeBool(
-    f["Kyc.IsCurrentlySanctioned"] ??
     f["KycData.IsCurrentlySanctioned"] ??
-    raw?.Kyc?.IsCurrentlySanctioned
+    resultItem?.KycData?.IsCurrentlySanctioned
   );
 
-  // Renda
+  // Renda (usa FinancialRisk que tem EstimatedIncomeRange)
   const rendaEstimada = safeNum(
     f["FinancialData.EstimatedIncome"] ??
-    f["FinancialData.Income"] ??
-    raw?.FinancialData?.EstimatedIncome ?? 0
+    resultItem?.FinancialData?.EstimatedIncome ?? 0
   );
 
-  // Apostas online (passagens nos últimos 30/90 dias)
+  // Apostas online
   const apostas30d = safeNum(
-    f["OnlineBettingPropensity.Passagens30Days"] ??
-    f["OnlineBettingPropensity.Passagens30d"] ?? 0
+    f["OnlineBettingPropensity.Last30DaysPassages"] ??
+    resultItem?.OnlineBettingPropensity?.Last30DaysPassages ?? 0
   );
   const apostas90d = safeNum(
-    f["OnlineBettingPropensity.Passagens90Days"] ??
-    f["OnlineBettingPropensity.Passagens90d"] ?? 0
+    f["OnlineBettingPropensity.Last90DaysPassages"] ??
+    resultItem?.OnlineBettingPropensity?.Last90DaysPassages ?? 0
   );
 
   // --- Cálculo do score ---
@@ -136,22 +145,23 @@ export function calcularScorePF(input: ScorePFInput): ScoreResult {
     // Penalidades
     if (obito) score = 0;
     if (isSancionado) score -= 300;
-    if (isPEP) score -= 100;
-    if (totalCobrancas > 0) score -= Math.min(totalCobrancas * 30, 200);
+    if (isPEP) score -= 80;
+    if (emCobrancaAtual) score -= 150;
+    if (totalCobrancas > 0) score -= Math.min(totalCobrancas * 20, 150);
     if (processosReu > 0) score -= Math.min(processosReu * 20, 150);
     if (totalProcessos > 5) score -= 50;
-    if (apostas30d > 3) score -= 50;
-    if (apostas90d > 10) score -= 30;
+    if (apostas30d > 5) score -= 50;
+    if (apostas90d > 15) score -= 30;
 
     // Bônus
     if (rendaEstimada > 10000) score += 50;
     if (rendaEstimada > 30000) score += 50;
-    if (totalCobrancas === 0 && totalProcessos === 0) score += 80;
+    if (!emCobrancaAtual && processosReu === 0) score += 80;
 
     score = Math.max(0, Math.min(1000, Math.round(score)));
   }
 
-  const alertaGeral = obito || isSancionado || isPEP || totalCobrancas > 0 || processosReu > 2;
+  const alertaGeral = obito || isSancionado || emCobrancaAtual || processosReu > 2;
 
   return {
     score,
@@ -163,8 +173,8 @@ export function calcularScorePF(input: ScorePFInput): ScoreResult {
       alerta_sancao: isSancionado,
       alerta_obito: obito,
       alerta_processos: totalProcessos > 0,
-      alerta_inadimplencia: totalCobrancas > 0,
-      alerta_apostas: apostas30d > 3,
+      alerta_inadimplencia: emCobrancaAtual,
+      alerta_apostas: apostas30d > 5,
     },
     detalhes: {
       nome,
