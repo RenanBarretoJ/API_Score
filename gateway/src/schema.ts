@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, integer, jsonb, timestamp, uniqueIndex, index } from "drizzle-orm/pg-core";
+import { pgTable, uuid, varchar, integer, jsonb, timestamp, uniqueIndex, index, boolean } from "drizzle-orm/pg-core";
 
 export const plans = pgTable("plans", {
   id: varchar("id", { length: 32 }).primaryKey(),
@@ -11,12 +11,41 @@ export const clients = pgTable("clients", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: varchar("name", { length: 256 }).notNull(),
   email: varchar("email", { length: 256 }),
+  company: varchar("company", { length: 256 }),
   planId: varchar("plan_id", { length: 32 }).notNull().references(() => plans.id),
   stripeCustomerId: varchar("stripe_customer_id", { length: 128 }),
+  credits: integer("credits").notNull().default(0),
   status: varchar("status", { length: 16 }).notNull().default("active"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+// Pacotes de créditos disponíveis para compra
+export const creditPacks = pgTable("credit_packs", {
+  id: varchar("id", { length: 32 }).primaryKey(),
+  name: varchar("name", { length: 128 }).notNull(),
+  credits: integer("credits").notNull(),
+  priceReais: integer("price_reais").notNull(),     // em centavos
+  stripePriceId: varchar("stripe_price_id", { length: 128 }),
+  active: boolean("active").notNull().default(true),
+});
+
+// Histórico de transações de crédito
+export const creditTransactions = pgTable(
+  "credit_transactions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    clientId: uuid("client_id").notNull().references(() => clients.id),
+    type: varchar("type", { length: 16 }).notNull(), // "purchase" | "usage" | "adjustment"
+    credits: integer("credits").notNull(),            // positivo = entrada, negativo = saída
+    balanceAfter: integer("balance_after").notNull(),
+    description: varchar("description", { length: 256 }),
+    stripeSessionId: varchar("stripe_session_id", { length: 128 }),
+    packId: varchar("pack_id", { length: 32 }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [index("credit_tx_client_idx").on(t.clientId, t.createdAt)]
+);
 
 export const apiKeys = pgTable(
   "api_keys",

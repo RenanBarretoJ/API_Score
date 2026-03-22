@@ -1,5 +1,5 @@
 import { Router, Request, Response } from "express";
-import { recordUsage } from "../middleware/metering.js";
+import { recordUsage, deductCredit } from "../middleware/metering.js";
 import { db } from "../db.js";
 import { queryLogs } from "../schema.js";
 
@@ -91,7 +91,12 @@ async function proxy(
     if (!response.ok) {
       return res.status(response.status).send(text);
     }
-    if (req.client) await recordUsage(req.client.clientId, "score-bw");
+    if (req.client) {
+      await recordUsage(req.client.clientId, "score-bw");
+      if (req.client.planId === "credits") {
+        await deductCredit(req.client.clientId, path);
+      }
+    }
     if (isJson) {
       try {
         return res.json(JSON.parse(text));

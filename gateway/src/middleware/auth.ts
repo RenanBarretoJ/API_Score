@@ -1,13 +1,14 @@
 import { Request, Response, NextFunction } from "express";
 import { db } from "../db.js";
 import { apiKeys, clients, plans } from "../schema.js";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import crypto from "crypto";
 
 export type ClientContext = {
   clientId: string;
   planId: string;
   monthlyQuota: number;
+  credits: number;
   keyId: string;
 };
 
@@ -36,6 +37,7 @@ export async function requireApiKey(req: Request, res: Response, next: NextFunct
       clientId: apiKeys.clientId,
       planId: clients.planId,
       monthlyQuota: plans.monthlyQuota,
+      credits: clients.credits,
     })
     .from(apiKeys)
     .innerJoin(clients, eq(apiKeys.clientId, clients.id))
@@ -46,15 +48,12 @@ export async function requireApiKey(req: Request, res: Response, next: NextFunct
   if (!row || hashKey(rawKey) !== row.keyHash) {
     return res.status(401).json({ success: false, message: "X-API-Key inválida." });
   }
-  if (row.planId === "paid") {
-    req.client = { clientId: row.clientId, planId: row.planId, monthlyQuota: 0, keyId: row.keyId };
-  } else {
-    req.client = {
-      clientId: row.clientId,
-      planId: row.planId,
-      monthlyQuota: row.monthlyQuota ?? 0,
-      keyId: row.keyId,
-    };
-  }
+  req.client = {
+    clientId: row.clientId,
+    planId: row.planId,
+    monthlyQuota: row.monthlyQuota ?? 0,
+    credits: row.credits ?? 0,
+    keyId: row.keyId,
+  };
   next();
 }
