@@ -12,6 +12,7 @@ import meRoutes from "./routes/me.js";
 import adminRoutes from "./routes/admin.js";
 import billingRoutes, { handleStripeWebhook } from "./routes/billing.js";
 import registerRoutes from "./routes/register.js";
+import scrRoutes from "./routes/scr.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -65,6 +66,7 @@ app.use("/v1/register", registerRoutes);
 
 // ─── Rotas autenticadas ─────────────────────────────────────────────────────
 app.use("/v1/score-bw", requireApiKey, checkQuota, scoreBwRoutes);
+app.use("/v1/scr", requireApiKey, checkQuota, scrRoutes);
 app.use("/v1/billing", requireApiKey, billingRoutes);
 app.use("/v1/me", requireApiKey, meRoutes);
 app.use("/admin", requireAdmin, adminRoutes);
