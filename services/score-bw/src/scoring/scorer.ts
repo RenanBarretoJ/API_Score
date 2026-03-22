@@ -47,9 +47,20 @@ export interface ScoreResult {
     total_empregos?: number | null;
     empregos_ativos?: number | null;
     empregado?: boolean | null;
-    // Apostas online
+    // Apostas online (PF)
     aposta_propensity?: string | null;
     aposta_365d?: number | null;
+    // KYC PEP nível
+    pep_nivel?: string | null;
+    pep_cargo?: string | null;
+    // Cobrança
+    cobranca_ativa?: boolean | null;
+    cobranca_365d?: number | null;
+    // Processos detalhados
+    total_processos_autor?: number | null;
+    total_processos_reu?: number | null;
+    // E-mails (PJ)
+    emails?: string[];
     // Campos legados
     renda_estimada?: number | null;
     score_bdc?: number | null;
@@ -267,12 +278,25 @@ export function calcularScorePJ(input: ScorePJInput): ScoreResult {
     f["Processes.TotalLawsuitsAsDefendant"] ??
     resultItem?.Processes?.TotalLawsuitsAsDefendant ?? 0
   );
+  const processosAutor = safeNum(
+    f["Processes.TotalLawsuitsAsAuthor"] ??
+    resultItem?.Processes?.TotalLawsuitsAsAuthor ?? 0
+  );
 
   // KYC da empresa
   const isSancionado = safeBool(
     f["KycData.IsCurrentlySanctioned"] ??
     resultItem?.KycData?.IsCurrentlySanctioned
   );
+  const isPEP_empresa = safeBool(
+    f["KycData.IsCurrentlyPEP"] ??
+    resultItem?.KycData?.IsCurrentlyPEP
+  );
+  // Nível e cargo do PEP (pega o histórico mais recente)
+  const pepHistory: any[] = resultItem?.KycData?.PEPHistory ?? [];
+  const pepAtual = pepHistory.find((p: any) => p?.StartDate) ?? pepHistory[0] ?? null;
+  const pepNivel: string = pepAtual?.Level ?? "";
+  const pepCargo: string = pepAtual?.JobTitle ?? "";
 
   // Sócios com PEP — DynamicQsaData fica dentro de Result[0]
   const socios: any[] = resultItem?.DynamicQsaData?.PartnerData ?? [];
@@ -280,15 +304,27 @@ export function calcularScorePJ(input: ScorePJInput): ScoreResult {
     safeBool(s?.KycData?.IsCurrentlyPEP ?? s?.Kyc?.IsCurrentlyPEP)
   ).length;
 
-  // Inadimplência PJ
+  // Inadimplência PJ (collections dataset)
+  const colData = resultItem?.Collections ?? {};
   const emCobrancaAtual = safeBool(
-    f["Collections.IsCurrentlyOnCollection"] ??
-    resultItem?.Collections?.IsCurrentlyOnCollection
+    colData?.IsCurrentlyOnCollection ??
+    f["Collections.IsCurrentlyOnCollection"]
   );
   const totalCobrancas = safeNum(
-    f["Collections.CollectionOccurrences"] ??
-    resultItem?.Collections?.CollectionOccurrences ?? 0
+    colData?.CollectionOccurrences ??
+    f["Collections.CollectionOccurrences"] ?? 0
   );
+  const cobranca365d = safeNum(
+    colData?.Last365DaysCollectionOccurrences ??
+    f["Collections.Last365DaysCollectionOccurrences"] ?? 0
+  );
+
+  // E-mails da empresa (emails dataset)
+  const emailsRaw: any[] = resultItem?.Emails ?? [];
+  const emails: string[] = emailsRaw
+    .map((e: any) => e?.EmailAddress ?? e?.Email ?? "")
+    .filter((e: string) => e.length > 0)
+    .slice(0, 5);
 
   // --- Cálculo do score ---
   let score: number;
@@ -308,7 +344,8 @@ export function calcularScorePJ(input: ScorePJInput): ScoreResult {
     score = Math.max(0, Math.min(1000, Math.round(score)));
   }
 
-  const alertaGeral = isSancionado || sociosPEP > 0 || emCobrancaAtual || processosReu > 5;
+  const temPEP = isPEP_empresa || sociosPEP > 0;
+  const alertaGeral = isSancionado || temPEP || emCobrancaAtual || processosReu > 5;
 
   return {
     score,
@@ -316,7 +353,7 @@ export function calcularScorePJ(input: ScorePJInput): ScoreResult {
     hasRestrictions: alertaGeral,
     alertas: {
       alerta_geral: alertaGeral,
-      alerta_pep: sociosPEP > 0,
+      alerta_pep: temPEP,
       alerta_sancao: isSancionado,
       alerta_obito: false,
       alerta_processos: totalProcessos > 0,
@@ -326,11 +363,22 @@ export function calcularScorePJ(input: ScorePJInput): ScoreResult {
     detalhes: {
       nome,
       idade: null,
-      renda_estimada: null,
-      score_bdc: bdcScore >= 0 ? bdcScore : null,
+      // KYC / PEP
+      pep: temPEP,
+      pep_nivel: pepNivel || null,
+      pep_cargo: pepCargo || null,
+      // Cobrança
+      cobranca_ativa: emCobrancaAtual,
+      cobranca_365d: cobranca365d,
+      // Processos
       total_processos: totalProcessos,
+      total_processos_autor: processosAutor,
+      total_processos_reu: processosReu,
       total_cobrancas: totalCobrancas,
-      pep: sociosPEP > 0,
+      // E-mails
+      emails: emails.length > 0 ? emails : undefined,
+      // Score BDC
+      score_bdc: bdcScore >= 0 ? bdcScore : null,
       obito: false,
     },
   };

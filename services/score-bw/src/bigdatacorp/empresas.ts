@@ -9,6 +9,8 @@ const DATASETS_PJ = [
   "financial_risk",
   "owners_kyc",
   "dynamic_qsa_data",
+  "collections",
+  "emails",
 ];
 
 export interface BDCEmpresaResult {
