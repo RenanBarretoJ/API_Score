@@ -100,17 +100,22 @@ async function saveLog(params: {
   });
 }
 
-// ─── Proxy PF ─────────────────────────────────────────────────────────────────
+// ─── Proxy genérico Serasa (GET com X-Document-Id) ───────────────────────────
 
-async function callSerasaPF(
+async function callSerasa(
   req: Request,
   res: Response,
-  cpf: string,
-  reportName: string,
-  optionalFeatures?: string
+  options: {
+    apiPath:      string;
+    reportName:   string;
+    document:     string;
+    documentType: "cpf" | "cnpj";
+    features?:    string;
+  }
 ) {
+  const { apiPath, reportName, document, documentType, features } = options;
   const startedAt = Date.now();
-  const endpoint  = `/credit-services/person-information-report/v1/creditreport`;
+  const logEndpoint = `${apiPath}?reportName=${reportName}`;
 
   if (!CLIENT_ID || !CLIENT_SECRET) {
     return res.status(503).json({ success: false, message: "Serasa não configurado." });
@@ -119,17 +124,17 @@ async function callSerasaPF(
   try {
     const token = await getToken();
 
-    const params = new URLSearchParams({ reportName });
-    if (optionalFeatures) params.set("optionalFeatures", optionalFeatures);
+    const qs = new URLSearchParams({ reportName });
+    if (features) qs.set("optionalFeatures", features);
 
-    const url = `${API_BASE}${endpoint}?${params.toString()}`;
+    const url = `${API_BASE}${apiPath}?${qs.toString()}`;
 
     const response = await fetch(url, {
       method:  "GET",
       headers: {
         "Authorization": `Bearer ${token}`,
         "Content-Type":  "application/json",
-        "X-Document-Id": cpf,
+        "X-Document-Id": document,
       },
       signal: AbortSignal.timeout(30_000),
     });
@@ -139,9 +144,9 @@ async function callSerasaPF(
 
     await saveLog({
       req,
-      endpoint:       `${endpoint}?reportName=${reportName}`,
-      documentType:   "cpf",
-      documentValue:  cpf,
+      endpoint:       logEndpoint,
+      documentType,
+      documentValue:  document,
       responseStatus: response.status,
       responseBody:   parsed,
       durationMs:     Date.now() - startedAt,
@@ -162,12 +167,12 @@ async function callSerasaPF(
     try { return res.json(JSON.parse(text)); } catch { return res.type("text").send(text); }
 
   } catch (err: any) {
-    console.error("[Gateway/Serasa PF]", err.message);
+    console.error(`[Gateway/Serasa] ${logEndpoint}:`, err.message);
     await saveLog({
       req,
-      endpoint:       endpoint,
-      documentType:   "cpf",
-      documentValue:  cpf,
+      endpoint:       logEndpoint,
+      documentType,
+      documentValue:  document,
       responseStatus: 502,
       responseBody:   { success: false, message: err.message },
       errorMessage:   err.message,
@@ -177,7 +182,7 @@ async function callSerasaPF(
   }
 }
 
-// ─── Rotas ───────────────────────────────────────────────────────────────────
+// ─── Rotas PF ────────────────────────────────────────────────────────────────
 
 /**
  * GET /v1/serasa/pf/:cpf
@@ -189,13 +194,18 @@ router.get("/pf/:cpf", async (req, res) => {
   if (clean.length !== 11) {
     return res.status(400).json({ success: false, message: "CPF inválido." });
   }
-  const features = req.query.features as string | undefined;
-  await callSerasaPF(req, res, clean, "RELATORIO_BASICO_PF_PME", features);
+  await callSerasa(req, res, {
+    apiPath:      "/credit-services/person-information-report/v1/creditreport",
+    reportName:   "RELATORIO_BASICO_PF_PME",
+    document:     clean,
+    documentType: "cpf",
+    features:     req.query.features as string | undefined,
+  });
 });
 
 /**
  * GET /v1/serasa/pf-avancado/:cpf
- * Relatório avançado com score PF — 2 créditos
+ * Relatório avançado + score PF — 2 créditos
  * Query opcional: ?features=SCORE,RENDA_ESTIMADA_PF
  */
 router.get("/pf-avancado/:cpf", async (req, res) => {
@@ -203,8 +213,33 @@ router.get("/pf-avancado/:cpf", async (req, res) => {
   if (clean.length !== 11) {
     return res.status(400).json({ success: false, message: "CPF inválido." });
   }
-  const features = req.query.features as string | undefined;
-  await callSerasaPF(req, res, clean, "RELATORIO_AVANCADO_TOP_SCORE_PF_PME", features);
+  await callSerasa(req, res, {
+    apiPath:      "/credit-services/person-information-report/v1/creditreport",
+    reportName:   "RELATORIO_AVANCADO_TOP_SCORE_PF_PME",
+    document:     clean,
+    documentType: "cpf",
+    features:     req.query.features as string | undefined,
+  });
+});
+
+// ─── Rotas PJ ────────────────────────────────────────────────────────────────
+
+/**
+ * GET /v1/serasa/pj/:cnpj
+ * Relatório básico PJ — 2 créditos
+ */
+router.get("/pj/:cnpj", async (req, res) => {
+  const clean = (req.params.cnpj as string).replace(/\D/g, "");
+  if (clean.length !== 14) {
+    return res.status(400).json({ success: false, message: "CNPJ inválido." });
+  }
+  await callSerasa(req, res, {
+    apiPath:      "/credit-services/business-information-report/v1/reports",
+    reportName:   "RELATORIO_BASICO_PJ_PME",
+    document:     clean,
+    documentType: "cnpj",
+    features:     req.query.features as string | undefined,
+  });
 });
 
 export default router;
