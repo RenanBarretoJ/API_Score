@@ -14,6 +14,8 @@ import billingRoutes, { handleStripeWebhook } from "./routes/billing.js";
 import registerRoutes from "./routes/register.js";
 import scrRoutes from "./routes/scr.js";
 
+console.log("[STARTUP] Todos os módulos carregados com sucesso.");
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = parseInt(process.env.PORT || "4000", 10);
@@ -80,10 +82,12 @@ app.use((_req, res) => {
 });
 // ────────────────────────────────────────────────────────────────────────────
 
+console.log(`[STARTUP] Iniciando servidor na porta ${PORT}...`);
 const server = app.listen(PORT, "0.0.0.0", () => {
   console.log(`[gateway] listening on port ${PORT}`);
   console.log(`[gateway] DATABASE_URL: ${process.env.DATABASE_URL ? "ok" : "NÃO DEFINIDA"}`);
   console.log(`[gateway] SCORE_BW_SERVICE_URL: ${process.env.SCORE_BW_SERVICE_URL ?? "não definida"}`);
+  console.log(`[gateway] SCR_SERVICE_URL: ${process.env.SCR_SERVICE_URL ?? "não definida"}`);
 });
 
 // Node.js fecha keep-alive após 5s por padrão.
