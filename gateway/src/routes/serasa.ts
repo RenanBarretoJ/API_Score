@@ -5,28 +5,27 @@ import { queryLogs } from "../schema.js";
 
 const router = Router();
 
-// ─── Configuração via variáveis de ambiente ──────────────────────────────────
+// ─── Configuração ─────────────────────────────────────────────────────────────
 const CLIENT_ID     = process.env.SERASA_CLIENT_ID;
 const CLIENT_SECRET = process.env.SERASA_CLIENT_SECRET;
 
-// URLs configuráveis — ajuste se a Serasa indicar endpoint diferente
-const TOKEN_URL   = process.env.SERASA_TOKEN_URL   ?? "https://api.serasaexperian.com.br/security/v2/oauth/token";
-const API_BASE    = process.env.SERASA_API_BASE_URL ?? "https://api.serasaexperian.com.br";
-const PF_PATH     = process.env.SERASA_PF_PATH      ?? "/consumers/v1.0/relatorio-basico-pf";
-const PJ_PATH     = process.env.SERASA_PJ_PATH      ?? "/companies/v1.0/relatorio-basico-pj";
+const TOKEN_URL = "https://api.serasaexperian.com.br/security/iam/v1/client-identities/login";
+const API_BASE  = "https://api.serasaexperian.com.br";
+
+// Custo em créditos por consulta Serasa
+const SERASA_CREDIT_COST = 2;
 
 if (!CLIENT_ID || !CLIENT_SECRET) {
   console.warn("[Gateway/Serasa] SERASA_CLIENT_ID ou SERASA_CLIENT_SECRET não definidos; rotas Serasa desativadas.");
 }
 
-// ─── Cache de token OAuth2 ───────────────────────────────────────────────────
+// ─── Cache de token ───────────────────────────────────────────────────────────
 let cachedToken: string | null = null;
 let tokenExpiresAt = 0;
 
 async function getToken(): Promise<string> {
   const now = Date.now();
 
-  // Reutiliza token se ainda válido (com margem de 60s)
   if (cachedToken && now < tokenExpiresAt - 60_000) {
     return cachedToken;
   }
@@ -35,17 +34,17 @@ async function getToken(): Promise<string> {
     throw new Error("SERASA_CLIENT_ID ou SERASA_CLIENT_SECRET não configurados.");
   }
 
-  const body = new URLSearchParams({
-    grant_type:    "client_credentials",
-    client_id:     CLIENT_ID,
-    client_secret: CLIENT_SECRET,
-  });
+  // Basic Auth: Base64(clientId:clientSecret)
+  const credentials = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString("base64");
 
   const resp = await fetch(TOKEN_URL, {
     method:  "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body:    body.toString(),
-    signal:  AbortSignal.timeout(15_000),
+    headers: {
+      "Content-Type":  "application/json",
+      "Authorization": `Basic ${credentials}`,
+    },
+    body:   JSON.stringify({}),
+    signal: AbortSignal.timeout(15_000),
   });
 
   if (!resp.ok) {
@@ -53,16 +52,20 @@ async function getToken(): Promise<string> {
     throw new Error(`Serasa auth falhou (${resp.status}): ${text}`);
   }
 
-  const data = await resp.json() as { access_token?: string; expires_in?: number };
+  const data = await resp.json() as {
+    accessToken?: string;
+    tokenType?:   string;
+    expiresIn?:   number;
+  };
 
-  if (!data.access_token) {
-    throw new Error("Serasa não retornou access_token.");
+  if (!data.accessToken) {
+    throw new Error(`Serasa não retornou accessToken. Resposta: ${JSON.stringify(data)}`);
   }
 
-  cachedToken     = data.access_token;
-  tokenExpiresAt  = now + (data.expires_in ?? 7200) * 1000;
+  cachedToken    = data.accessToken;
+  tokenExpiresAt = now + (data.expiresIn ?? 3600) * 1000;
 
-  console.log(`[Serasa] Token renovado. Expira em ${data.expires_in ?? 7200}s.`);
+  console.log(`[Serasa] Token renovado. Expira em ${data.expiresIn ?? 3600}s.`);
   return cachedToken;
 }
 
@@ -97,29 +100,36 @@ async function saveLog(params: {
   });
 }
 
-async function callSerasa(
+// ─── Proxy PF ─────────────────────────────────────────────────────────────────
+
+async function callSerasaPF(
   req: Request,
   res: Response,
-  apiPath: string,
-  document: string,
-  documentType: "cpf" | "cnpj"
+  cpf: string,
+  reportName: string,
+  optionalFeatures?: string
 ) {
   const startedAt = Date.now();
+  const endpoint  = `/credit-services/person-information-report/v1/creditreport`;
 
   if (!CLIENT_ID || !CLIENT_SECRET) {
-    await saveLog({ req, endpoint: apiPath, documentType, documentValue: document, responseStatus: 503, responseBody: { success: false, message: "Serasa não configurado." }, errorMessage: "Credenciais ausentes", durationMs: 0 });
     return res.status(503).json({ success: false, message: "Serasa não configurado." });
   }
 
   try {
-    const token   = await getToken();
-    const url     = `${API_BASE}${apiPath}/${document}`;
+    const token = await getToken();
+
+    const params = new URLSearchParams({ reportName });
+    if (optionalFeatures) params.set("optionalFeatures", optionalFeatures);
+
+    const url = `${API_BASE}${endpoint}?${params.toString()}`;
 
     const response = await fetch(url, {
       method:  "GET",
       headers: {
         "Authorization": `Bearer ${token}`,
         "Content-Type":  "application/json",
+        "X-Document-Id": cpf,
       },
       signal: AbortSignal.timeout(30_000),
     });
@@ -129,16 +139,15 @@ async function callSerasa(
 
     await saveLog({
       req,
-      endpoint:       apiPath,
-      documentType,
-      documentValue:  document,
+      endpoint:       `${endpoint}?reportName=${reportName}`,
+      documentType:   "cpf",
+      documentValue:  cpf,
       responseStatus: response.status,
       responseBody:   parsed,
       durationMs:     Date.now() - startedAt,
     });
 
     if (!response.ok) {
-      // Token expirado externamente → invalida cache e deixa cliente tentar de novo
       if (response.status === 401) cachedToken = null;
       return res.status(response.status).send(text);
     }
@@ -146,19 +155,19 @@ async function callSerasa(
     if (req.client) {
       await recordUsage(req.client.clientId, "serasa");
       if (req.client.planId === "credits") {
-        await deductCredit(req.client.clientId, apiPath);
+        await deductCredit(req.client.clientId, `serasa:${reportName}`, SERASA_CREDIT_COST);
       }
     }
 
     try { return res.json(JSON.parse(text)); } catch { return res.type("text").send(text); }
 
   } catch (err: any) {
-    console.error("[Gateway/Serasa]", err.message);
+    console.error("[Gateway/Serasa PF]", err.message);
     await saveLog({
       req,
-      endpoint:       apiPath,
-      documentType,
-      documentValue:  document,
+      endpoint:       endpoint,
+      documentType:   "cpf",
+      documentValue:  cpf,
       responseStatus: 502,
       responseBody:   { success: false, message: err.message },
       errorMessage:   err.message,
@@ -172,28 +181,30 @@ async function callSerasa(
 
 /**
  * GET /v1/serasa/pf/:cpf
- * Relatório básico PF (CPF) — consome 1 crédito
+ * Relatório básico PF — 2 créditos
+ * Query opcional: ?features=SCORE,RENDA_ESTIMADA_PF
  */
 router.get("/pf/:cpf", async (req, res) => {
-  const raw   = req.params.cpf as string;
-  const clean = raw.replace(/\D/g, "");
+  const clean = (req.params.cpf as string).replace(/\D/g, "");
   if (clean.length !== 11) {
     return res.status(400).json({ success: false, message: "CPF inválido." });
   }
-  await callSerasa(req, res, PF_PATH, clean, "cpf");
+  const features = req.query.features as string | undefined;
+  await callSerasaPF(req, res, clean, "RELATORIO_BASICO_PF_PME", features);
 });
 
 /**
- * GET /v1/serasa/pj/:cnpj
- * Relatório básico PJ (CNPJ) — consome 1 crédito
+ * GET /v1/serasa/pf-avancado/:cpf
+ * Relatório avançado com score PF — 2 créditos
+ * Query opcional: ?features=SCORE,RENDA_ESTIMADA_PF
  */
-router.get("/pj/:cnpj", async (req, res) => {
-  const raw   = req.params.cnpj as string;
-  const clean = raw.replace(/\D/g, "");
-  if (clean.length !== 14) {
-    return res.status(400).json({ success: false, message: "CNPJ inválido." });
+router.get("/pf-avancado/:cpf", async (req, res) => {
+  const clean = (req.params.cpf as string).replace(/\D/g, "");
+  if (clean.length !== 11) {
+    return res.status(400).json({ success: false, message: "CPF inválido." });
   }
-  await callSerasa(req, res, PJ_PATH, clean, "cnpj");
+  const features = req.query.features as string | undefined;
+  await callSerasaPF(req, res, clean, "RELATORIO_AVANCADO_TOP_SCORE_PF_PME", features);
 });
 
 export default router;

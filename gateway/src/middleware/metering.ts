@@ -32,12 +32,12 @@ export async function recordUsage(clientId: string, service: string) {
   }
 }
 
-/** Desconta 1 crédito do cliente (plano "credits"). Retorna false se sem saldo. */
-export async function deductCredit(clientId: string, service: string): Promise<boolean> {
+/** Desconta N créditos do cliente (plano "credits"). Retorna false se sem saldo. */
+export async function deductCredit(clientId: string, service: string, amount = 1): Promise<boolean> {
   const [updated] = await db
     .update(clients)
-    .set({ credits: sql`${clients.credits} - 1` })
-    .where(and(eq(clients.id, clientId), sql`${clients.credits} > 0`))
+    .set({ credits: sql`${clients.credits} - ${amount}` })
+    .where(and(eq(clients.id, clientId), sql`${clients.credits} >= ${amount}`))
     .returning({ credits: clients.credits });
 
   if (!updated) return false;
@@ -45,7 +45,7 @@ export async function deductCredit(clientId: string, service: string): Promise<b
   await db.insert(creditTransactions).values({
     clientId,
     type: "usage",
-    credits: -1,
+    credits: -amount,
     balanceAfter: updated.credits,
     description: `Consulta: ${service}`,
   });
@@ -59,7 +59,7 @@ export async function checkQuota(req: Request, res: Response, next: NextFunction
   // Plano "paid" — sem limite
   if (req.client.planId === "paid") return next();
 
-  // Plano "credits" — verifica saldo
+  // Plano "credits" — verifica saldo (mínimo 1 crédito para passar; deduct real acontece na rota)
   if (req.client.planId === "credits") {
     const [row] = await db
       .select({ credits: clients.credits })
